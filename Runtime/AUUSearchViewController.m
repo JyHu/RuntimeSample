@@ -22,6 +22,13 @@
 
 - (void)viewWillAppear:(BOOL)animated
 {
+    [super viewWillAppear:animated];
+    self.navigationItem.prompt = nil;
+}
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
     self.navigationItem.prompt = @"Search";
 }
 
@@ -55,8 +62,8 @@
     }]];
     
     
-    [self.tableModel appendSectionHeaderWithTitle:@"Search"];
-    [self.tableModel appendSectionHeaderWithTitle:@"History"];
+    [self.tableModel addSectionWithTitle:@"Search"];
+    [self.tableModel addSectionWithTitle:@"History"];
     
     [self loadHistory];
     
@@ -109,7 +116,7 @@
 {
     NSMutableArray *set = [[NSUserDefaults standardUserDefaults] objectForKey:@"com.jyhu.searchHistory"];
     if (set) {
-        [self.tableModel removeObjectsInSection:2];
+        [self removeObjectsInSection:2];
         
         for (NSString *keywords in set) {
             
@@ -154,7 +161,7 @@
 
 - (void)compileSearch
 {
-    [self.tableModel removeObjectsInSection:1];
+    [self removeObjectsInSection:1];
     
     if (objc_getClass([self.searchBar.text UTF8String])) {
         [self.tableModel addObject:self.classCellObject toSection:1];

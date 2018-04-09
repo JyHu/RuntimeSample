@@ -18,4 +18,6 @@
 @property (retain, nonatomic) NIMutableTableViewModel *tableModel;
 @property (retain, nonatomic) NITableViewActions *tableActions;
 
+- (void)removeObjectsInSection:(NSInteger)section;
+
 @end

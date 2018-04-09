@@ -25,6 +25,8 @@
     } else {
         [self loadLibs];
     }
+    
+    [self.tableView reloadData];
 }
 
 /**
@@ -70,8 +72,6 @@
     self.title = @"Library";
     self.navigationItem.prompt = [[[NSString stringWithUTF8String:self.image_name] componentsSeparatedByString:@"/"] lastObject];
     
-    [self.tableModel appendSectionHeaderWithTitle:@"非私有类"];
-    [self.tableModel appendSectionHeaderWithTitle:@"私有类"];
     
     unsigned int class_count = 0;
     const char **class_names = objc_copyClassNamesForImage(self.image_name, &class_count);
@@ -82,15 +82,7 @@
     for (unsigned int i = 0; i < class_count; i ++) {
         const char *class_name = class_names[i];
         
-        __weak AUURuntimeViewController *weakSelf = self;
-        
-        NITitleCellObject *object = [self.tableActions attachToObject:[NITitleCellObject objectWithTitle:[NSString stringWithUTF8String:class_name]] tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-            __strong AUURuntimeViewController *strongSelf = weakSelf;
-            AUURuntimeViewController *clsVC = [[AUURuntimeViewController alloc] init];
-            clsVC.class_name = class_name;
-            [strongSelf.navigationController pushViewController:clsVC animated:YES];
-            return YES;
-        }];
+        NITitleCellObject *object = [self classCellObjectWithClassName:class_name];
         
         if ([[NSString stringWithUTF8String:class_name] hasPrefix:@"_"]) {
             [privateClasses addObject:object];
@@ -99,8 +91,10 @@
         }
     }
     
-    [self.tableModel addObjectsFromArray:[publicClasses sorted] toSection:0];
-    [self.tableModel addObjectsFromArray:[privateClasses sorted] toSection:1];
+    [self.tableModel addSectionWithTitle:@"非私有类"];
+    [self.tableModel addObjectsFromArray:[publicClasses sorted]];
+    [self.tableModel addSectionWithTitle:@"私有类"];
+    [self.tableModel addObjectsFromArray:[privateClasses sorted]];
 }
 
 /**
@@ -113,36 +107,29 @@
     self.title = @"Class";
     self.navigationItem.prompt = [NSString stringWithUTF8String:self.class_name];
     
-    
-    __weak AUURuntimeViewController *weakSelf = self;
-    
-    
     const char *image_name = class_getImageName(cls);
     if (image_name != NULL) {
-        [self.tableModel appendSectionHeaderWithTitle:@"所在库"];
+        [self.tableModel addSectionWithTitle:@"所在库"];
         [self.tableModel addObject:[self imageCellObjectWithImageName:image_name]];
+    }
+    
+    Protocol *protocol = objc_getProtocol(class_getName(cls));
+    if (protocol) {
+        [self.tableModel addSectionWithTitle:@"同名协议"];
+        [self.tableModel addObject:[self protocolCellObjectWithProtocol:protocol]];
     }
     
     Class supCls = class_getSuperclass(cls);
     if (supCls) {
-        [self.tableModel appendSectionHeaderWithTitle:@"父类"];
-        [self.tableModel addObject:[self.tableActions attachToObject:[NITitleCellObject objectWithTitle:[NSString stringWithUTF8String:class_getName(supCls)]] tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-            
-            __strong AUURuntimeViewController *strongSelf = weakSelf;
-            
-            AUURuntimeViewController *clsVC = [[AUURuntimeViewController alloc] init];
-            clsVC.class_name = class_getName(supCls);
-            [strongSelf.navigationController pushViewController:clsVC animated:YES];
-            
-            return YES;
-        }]];
+        [self.tableModel addSectionWithTitle:@"父类"];
+        [self.tableModel addObject:[self classCellObjectWithClassName:class_getName(supCls)]];
     }
     
     
     unsigned int protocol_count = 0;
     Protocol *__unsafe_unretained * protocol_list = class_copyProtocolList(cls, &protocol_count);
     if (protocol_count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"协议"];
+        [self.tableModel addSectionWithTitle:@"协议"];
         NSMutableArray *protocolsArr = [[NSMutableArray alloc] init];
         for (unsigned int i = 0; i < protocol_count; i ++) {
             [protocolsArr addObject:[self protocolCellObjectWithProtocol:protocol_list[i]]];
@@ -153,7 +140,7 @@
     unsigned int property_count = 0;
     objc_property_t *property_list = class_copyPropertyList(cls, &property_count);
     if (property_count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"属性"];
+        [self.tableModel addSectionWithTitle:@"属性"];
         NSMutableArray *propertyArr = [[NSMutableArray alloc] init];
         for (unsigned int i = 0; i < property_count; i ++) {
             [propertyArr addObject:[self propertyCellObjectWithProperty:property_list[i]]];
@@ -164,7 +151,7 @@
     unsigned int method_count = 0;
     Method *method_list = class_copyMethodList(cls, &method_count);
     if (method_count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"方法"];
+        [self.tableModel addSectionWithTitle:@"方法"];
         NSMutableArray *methodsArr = [[NSMutableArray alloc] init];
         for (unsigned int i = 0; i < method_count; i ++) {
             Method method = method_list[i];
@@ -184,11 +171,16 @@
     self.title = @"Protocol";
     self.navigationItem.prompt = [NSString stringWithUTF8String:protocol_getName(self.protocol)];
     
+    if (objc_getClass(protocol_getName(self.protocol))) {
+        [self.tableModel addSectionWithTitle:@"同名类"];
+        [self.tableModel addObject:[self classCellObjectWithClassName:protocol_getName(self.protocol)]];
+    }
+    
     unsigned int protocol_count = 0;
     Protocol * __unsafe_unretained * protocol_list = protocol_copyProtocolList(self.protocol, &protocol_count);
     
     if (protocol_count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"协议"];
+        [self.tableModel addSectionWithTitle:@"协议"];
         NSMutableArray *protocolsArr = [[NSMutableArray alloc] init];
         for (unsigned int i = 0; i < protocol_count; i ++) {
             [protocolsArr addObject:[self protocolCellObjectWithProtocol:protocol_list[i]]];
@@ -196,66 +188,74 @@
         [self.tableModel addObjectsFromArray:[protocolsArr sorted]];
     }
     
-    __weak AUURuntimeViewController *weakSelf = self;
-    
-    NSArray * (^propertyObjectCreationBlock)(BOOL isRequired, BOOL isInstance) = ^NSArray *(BOOL isRequired, BOOL isInstance) {
-        unsigned int temp_count = 0;
-        __strong AUURuntimeViewController *strongSelf = weakSelf;
-#warning - CFNetwork -- NSAboutURLProtocol -- NSURLProtocol -- NSURLRequest *request -- NSSecureCoding  Crash
-        objc_property_t *property_list = protocol_copyPropertyList2(strongSelf.protocol, &temp_count, isRequired, isInstance);
-        NSMutableArray *tempArr = [[NSMutableArray alloc] initWithCapacity:temp_count];
-        if (temp_count > 0) {
-            for (unsigned int i = 0; i < temp_count; i ++) {
-                [tempArr addObject:[strongSelf propertyCellObjectWithProperty:property_list[i]]];
-            }
-        }
-        return tempArr;
-    };
-    
     NSMutableArray *propertyArray = [[NSMutableArray alloc] init];
-    [propertyArray addObjectsFromArray:propertyObjectCreationBlock(YES, YES)];
-    [propertyArray addObjectsFromArray:propertyObjectCreationBlock(YES, NO)];
-    [propertyArray addObjectsFromArray:propertyObjectCreationBlock(NO, YES)];
-    [propertyArray addObjectsFromArray:propertyObjectCreationBlock(NO, NO)];
+    [propertyArray addObjectsFromArray:[self protocolPropertyObjectIsRequired:YES isInstance:YES]];
+    [propertyArray addObjectsFromArray:[self protocolPropertyObjectIsRequired:YES isInstance:NO]];
+    [propertyArray addObjectsFromArray:[self protocolPropertyObjectIsRequired:NO isInstance:YES]];
+    [propertyArray addObjectsFromArray:[self protocolPropertyObjectIsRequired:NO isInstance:NO]];
     
     if (propertyArray.count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"属性"];
+        [self.tableModel addSectionWithTitle:@"属性"];
         [self.tableModel addObjectsFromArray:[propertyArray sorted]];
     }
     
-    
-    
-    
-    NSArray * (^methodObjectCreationBlock)(BOOL isRequired, BOOL isInstance) = ^NSArray *(BOOL isRequired, BOOL isInstance) {
-        unsigned int temp_count = 0;
-        __strong AUURuntimeViewController *strongSelf = weakSelf;
-        struct objc_method_description * method_description_list = protocol_copyMethodDescriptionList(strongSelf.protocol, isRequired, isInstance, &temp_count);
-        NSMutableArray *tempArray = [[NSMutableArray alloc] init];
-        if (temp_count > 0) {
-            for (unsigned int i = 0; i < temp_count; i ++) {
-                struct objc_method_description method_description = method_description_list[i];
-                [tempArray addObject:[strongSelf.tableActions attachToObject:[NITitleCellObject objectWithTitle:[NSString stringWithUTF8String:sel_getName(method_description.name)]] tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-                    return YES;
-                }]];
-            }
-        }
-        return tempArray;
-    };
-    
     NSMutableArray *methodArray = [[NSMutableArray alloc] init];
-    [methodArray addObjectsFromArray:methodObjectCreationBlock(YES, YES)];
-    [methodArray addObjectsFromArray:methodObjectCreationBlock(YES, NO)];
-    [methodArray addObjectsFromArray:methodObjectCreationBlock(NO, YES)];
-    [methodArray addObjectsFromArray:methodObjectCreationBlock(NO, NO)];
+    [methodArray addObjectsFromArray:[self protocolMethodObjectIsRequired:YES isInstance:YES]];
+    [methodArray addObjectsFromArray:[self protocolMethodObjectIsRequired:YES isInstance:NO]];
+    [methodArray addObjectsFromArray:[self protocolMethodObjectIsRequired:NO isInstance:YES]];
+    [methodArray addObjectsFromArray:[self protocolMethodObjectIsRequired:NO isInstance:NO]];
     
     if (methodArray.count > 0) {
-        [self.tableModel appendSectionHeaderWithTitle:@"方法"];
+        [self.tableModel addSectionWithTitle:@"方法"];
         [self.tableModel addObjectsFromArray:[methodArray sorted]];
     }
 }
 
+- (NSArray *)protocolPropertyObjectIsRequired:(BOOL)isRequired isInstance:(BOOL)isInstance {
+    unsigned int temp_count = 0;
+    // NSSecureCoding crash
+    objc_property_t *property_list = protocol_copyPropertyList2(self.protocol, &temp_count, isRequired, isInstance);
+    NSMutableArray *tempArr = [[NSMutableArray alloc] initWithCapacity:temp_count];
+    if (temp_count > 0) {
+        for (unsigned int i = 0; i < temp_count; i ++) {
+            [tempArr addObject:[self propertyCellObjectWithProperty:property_list[i]]];
+        }
+    }
+    return tempArr;
+}
+
+- (NSArray *)protocolMethodObjectIsRequired:(BOOL)isRequired isInstance:(BOOL)isInstance {
+    unsigned int temp_count = 0;
+    struct objc_method_description * method_description_list = protocol_copyMethodDescriptionList(self.protocol, isRequired, isInstance, &temp_count);
+    NSMutableArray *tempArray = [[NSMutableArray alloc] init];
+    if (temp_count > 0) {
+        for (unsigned int i = 0; i < temp_count; i ++) {
+            struct objc_method_description method_description = method_description_list[i];
+            [tempArray addObject:[self.tableActions attachToObject:[NITitleCellObject objectWithTitle:[NSString stringWithUTF8String:sel_getName(method_description.name)]] tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
+                return YES;
+            }]];
+        }
+    }
+    return tempArray;
+}
+
 #pragma mark - help methods
 #pragma mark -
+
+- (NITitleCellObject *)classCellObjectWithClassName:(const char *)clsName
+{
+    __weak AUURuntimeViewController *weakSelf = self;
+    NSString *title = [NSString stringWithUTF8String:clsName];
+    NIActionBlock actionBlock = ^BOOL(id object, id target, NSIndexPath *indexPath) {
+        __strong AUURuntimeViewController *strongSelf = weakSelf;
+        AUURuntimeViewController *clsVC = [[AUURuntimeViewController alloc] init];
+        clsVC.class_name = clsName;
+        [strongSelf.navigationController pushViewController:clsVC animated:YES];
+        return YES;
+    };
+    
+    return [self.tableActions attachToObject:[NITitleCellObject objectWithTitle:title] tapBlock:actionBlock];
+}
 
 - (NITitleCellObject *)imageCellObjectWithImageName:(const char *)image_name
 {
@@ -263,61 +263,66 @@
     
     NSString *imageName = [[imagePath backwordsSeperateBy:@"/"] lastObject];
     UIImage *imageIcon = ([UIImage imageNamed:![imageName containsString:@"."] ? @"framework_icon" : @"dylib_icon"]);
+    NISubtitleCellObject *object = [NISubtitleCellObject objectWithTitle:imageName subtitle:imagePath image:imageIcon];
     
     __weak AUURuntimeViewController *weakSelf = self;
-    return [self.tableActions attachToObject:[NISubtitleCellObject objectWithTitle:imageName subtitle:imagePath image:imageIcon]
-                                    tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-                                        
-                                        __strong AUURuntimeViewController *strongSelf = weakSelf;
-                                        
-                                        AUURuntimeViewController *libVC = [[AUURuntimeViewController alloc] init];
-                                        libVC.image_name = image_name;
-                                        [strongSelf.navigationController pushViewController:libVC animated:YES];
-                                        
-                                        return YES;
-                                    }];
+    NIActionBlock actionBlock = ^BOOL(id object, id target, NSIndexPath *indexPath) {
+        __strong AUURuntimeViewController *strongSelf = weakSelf;
+        AUURuntimeViewController *libVC = [[AUURuntimeViewController alloc] init];
+        libVC.image_name = image_name;
+        [strongSelf.navigationController pushViewController:libVC animated:YES];
+        
+        return YES;
+    };
+    
+    return [self.tableActions attachToObject:object
+                                    tapBlock:actionBlock];
 }
 
 - (NITitleCellObject *)propertyCellObjectWithProperty:(objc_property_t)property_t
 {
     __weak AUURuntimeViewController *weakSelf = self;
-    return [self.tableActions attachToObject:[NISubtitleCellObject objectWithTitle:[self property:property_t] subtitle:[self descriptionForProperty:property_t]]
-                                    tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-                                        __strong AUURuntimeViewController *strongSelf = weakSelf;
-                                        NSString *type = [strongSelf _type:property_t];
-                                        if ([type protocolType]) {
-                                            Protocol *protocol = objc_getProtocol([[type protocolType] UTF8String]);
-                                            if (protocol) {
-                                                AUURuntimeViewController *testVC = [[AUURuntimeViewController alloc] init];
-                                                testVC.protocol = protocol;
-                                                [strongSelf.navigationController pushViewController:testVC animated:YES];
-                                            }
-                                        } else if ([type objectType]) {
-                                            Class cls = objc_getClass([[type objectType] UTF8String]);
-                                            if (cls) {
-                                                AUURuntimeViewController *testVC = [[AUURuntimeViewController alloc] init];
-                                                testVC.class_name = class_getName(cls);
-                                                [strongSelf.navigationController pushViewController:testVC animated:YES];
-                                            }
-                                        }
-                                        return YES;
-                                    }];
+    NSString *title = [self property:property_t];
+    NSString *subTitle = [self descriptionForProperty:property_t];
+    NIActionBlock actionBlock = ^BOOL(id object, id target, NSIndexPath *indexPath) {
+        __strong AUURuntimeViewController *strongSelf = weakSelf;
+        NSString *type = [strongSelf _type:property_t];
+        if ([type protocolType]) {
+            Protocol *protocol = objc_getProtocol([[type protocolType] UTF8String]);
+            if (protocol) {
+                AUURuntimeViewController *testVC = [[AUURuntimeViewController alloc] init];
+                testVC.protocol = protocol;
+                [strongSelf.navigationController pushViewController:testVC animated:YES];
+            }
+        } else if ([type objectType]) {
+            Class cls = objc_getClass([[type objectType] UTF8String]);
+            if (cls) {
+                AUURuntimeViewController *testVC = [[AUURuntimeViewController alloc] init];
+                testVC.class_name = class_getName(cls);
+                [strongSelf.navigationController pushViewController:testVC animated:YES];
+            }
+        }
+        return YES;
+    };
+    
+    return [self.tableActions attachToObject:[NISubtitleCellObject objectWithTitle:title subtitle:subTitle]
+                                    tapBlock:actionBlock];
 }
 
 - (NITitleCellObject *)protocolCellObjectWithProtocol:(Protocol *)protocol
 {
     __weak AUURuntimeViewController *weakSelf = self;
-    return [self.tableActions attachToObject:[NITitleCellObject objectWithTitle:[NSString stringWithUTF8String:protocol_getName(protocol)]]
-                                    tapBlock:^BOOL(id object, id target, NSIndexPath *indexPath) {
-                                        
-                                        __strong AUURuntimeViewController *strongSelf = weakSelf;
-                                        
-                                        AUURuntimeViewController *protocolVC = [[AUURuntimeViewController alloc] init];
-                                        protocolVC.protocol = protocol;
-                                        [strongSelf.navigationController pushViewController:protocolVC animated:YES];
-                                        
-                                        return YES;
-                                    }];
+    NSString *title = [NSString stringWithUTF8String:protocol_getName(protocol)];
+    NIActionBlock actionBlock = ^BOOL(id object, id target, NSIndexPath *indexPath) {
+        __strong AUURuntimeViewController *strongSelf = weakSelf;
+        AUURuntimeViewController *protocolVC = [[AUURuntimeViewController alloc] init];
+        protocolVC.protocol = protocol;
+        [strongSelf.navigationController pushViewController:protocolVC animated:YES];
+        
+        return YES;
+    };
+    
+    return [self.tableActions attachToObject:[NITitleCellObject objectWithTitle:title] tapBlock:actionBlock];
 }
 
 - (NSString *)property:(objc_property_t)property_t

@@ -17,6 +17,11 @@
 
 @implementation AUUTableViewController
 
+- (void)dealloc
+{
+    NSLog(@"dealloc %@", self);
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
@@ -30,6 +35,13 @@
 - (void)backHome
 {
     [self.navigationController popToRootViewControllerAnimated:YES];
+}
+
+- (void)removeObjectsInSection:(NSInteger)section
+{
+    for (NSInteger i = [self.tableModel tableView:self.tableView numberOfRowsInSection:section] - 1; i >= 0; i --) {
+        [self.tableModel removeObjectAtIndexPath:[NSIndexPath indexPathForRow:i inSection:section]];
+    }
 }
 
 - (UITableView *)pri_tableView
@@ -52,7 +64,7 @@
 - (NIMutableTableViewModel *)tableModel
 {
     if (!_tableModel) {
-        _tableModel = [[NIMutableTableViewModel alloc] initWithDelegate:(id <NITableViewModelViewsDelegate>)[NICellFactory class]];
+        _tableModel = [[NIMutableTableViewModel alloc] initWithDelegate:(id <NITableViewModelDelegate>)[NICellFactory class]];
     }
     
     return _tableModel;

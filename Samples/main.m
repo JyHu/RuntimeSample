@@ -11,18 +11,18 @@
 #import "PropertySample.h"
 #import "MethodSample.h"
 #import "IvarSample.h"
-#import "MsgSendSample.h"
 #import "ProtocolSample.h"
+#import "IvarSample.h"
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         
 //        [ImageSample test];
-//        [PropertySample test];
-        [MethodSample test];
+        [PropertySample test];
+//        [MethodSample test];
 //        [IvarSample test];
 //        [ProtocolSample test];
-        
+//        [IvarSample test];
 //        [MsgSendSample test];
     }
     return 0;
